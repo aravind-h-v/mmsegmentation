@@ -1,0 +1,232 @@
+* Prepare Env:
+
+** cd to the dir and setup env variables:
+#+begin_src sh :shebang #!/bin/sh :tangle ./shrc_activate.sh
+  DIR="${HOME}/MMSEG"
+  'mkdir' '-pv' '--' "${DIR}"
+  cd "${DIR}"
+#+end_src
+
+** Copy the activation script:
+#+begin_src sh :shebang #!/bin/sh :tangle ./shrc_install.sh
+  cd "$('dirname' '--' "${0}")"
+  cp './shrc_activate.sh' "${HOME}/shrc_mmseg.sh"
+#+end_src
+
+** Install cpio and zstd:
+#+begin_src sh :shebang #!/bin/sh :tangle ./shrc_install.sh
+  sudo apt-get install \
+      cpio             \
+      zstd             \
+      libopencv-dev    \
+      squashfs-tools   \
+      libespeak-dev    \
+  ;
+#+end_src
+
+** Create the env:
+#+begin_src sh :shebang #!/bin/sh :tangle ./shrc_install.sh
+  . '/opt/anaconda/bin/activate'
+  conda create -n mmseg
+#+end_src
+
+** Activate the env:
+#+begin_src sh :shebang #!/bin/sh :tangle ./shrc_activate.sh
+  . '/opt/anaconda/bin/activate'
+  conda activate mmseg
+#+end_src
+
+** Install stuff:
+
+*** Install python:
+#+begin_src sh :shebang #!/bin/sh :tangle ./shrc_install.sh
+  . "${HOME}/shrc_mmseg.sh"
+  conda install python=3.10
+#+end_src
+
+*** Install basic dependencies:
+#+begin_src sh :shebang #!/bin/sh :tangle ./shrc_install.sh
+  . "${HOME}/shrc_mmseg.sh"
+  conda install numpy matplotlib pandas opencv scipy scikit-learn pyaudio jupyterlab nbconvert ipython jupyter tqdm cython scikit-learn-intelex
+#+end_src
+
+*** Install PIP dependencies:
+#+begin_src sh :shebang #!/bin/sh :tangle ./shrc_install.sh
+  . "${HOME}/shrc_mmseg.sh"
+  pip install --extra-index-url 'https://developer.download.nvidia.com/compute/redist' --upgrade nvidia-dali-cuda110 PyQt6 python-lsp-server yapf openai accelerate datasets diffusers evaluate transformers espnet espnet_model_zoo gradio openmim timm torch torchaudio torchvision yacs termcolor mediapipe gdown
+#+end_src
+
+*** Install mmcv:
+#+begin_src sh :shebang #!/bin/sh :tangle ./shrc_install.sh
+  . "${HOME}/shrc_mmseg.sh"
+  mim install mmcv-full
+  # mim install mmcv-full==1.6.2
+#+end_src
+
+*** Install mmsegmentation:
+#+begin_src sh :shebang #!/bin/sh :tangle ./shrc_install.sh
+  . "${HOME}/shrc_mmseg.sh"
+  git clone 'https://github.com/aravind-h-v/mmsegmentation.git'
+  cd mmsegmentation
+  pip install -v -e .
+#+end_src
+
+* Python part:
+
+** COMMENT Sample:
+
+*** Importing:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./import.py
+#+end_src
+
+*** Functions:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./functions.py
+#+end_src
+
+*** Execution stuff:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./execute.py
+#+end_src
+
+* Inference with trained model:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./inference.py :results output
+  from mmseg.apis import inference_segmentor, init_segmentor
+  import mmcv
+  import cv2
+
+  img = './data/fashion/x/training/9.jpg'
+
+  img = cv2.imread(filename=img, flags=cv2.IMREAD_UNCHANGED)
+  img = cv2.resize(img, (1000, 1500))
+  cv2.imwrite("./in.png", img)
+
+  config_file = './configs/segnext/segnext_mscan-b_1x16_512x512_adamw_160k_ade20k.py'
+
+  list_of_outnames = [
+      'out_160000.png', 'out_192000.png', 'out_224000.png', 'out_256000.png',
+      'out_288000.png', 'out_320000.png'
+  ]
+
+  list_of_files = [
+      './work_dirs/segnext_mscan-b_1x16_512x512_adamw_160k_ade20k/iter_160000.pth',
+      './work_dirs/segnext_mscan-b_1x16_512x512_adamw_160k_ade20k/iter_192000.pth',
+      './work_dirs/segnext_mscan-b_1x16_512x512_adamw_160k_ade20k/iter_224000.pth',
+      './work_dirs/segnext_mscan-b_1x16_512x512_adamw_160k_ade20k/iter_256000.pth',
+      './work_dirs/segnext_mscan-b_1x16_512x512_adamw_160k_ade20k/iter_288000.pth',
+      './work_dirs/segnext_mscan-b_1x16_512x512_adamw_160k_ade20k/iter_320000.pth'
+  ]
+
+  for i in range(len(list_of_files)):
+      checkpoint_file = list_of_files[i]
+
+      model = init_segmentor(config_file, checkpoint_file, device='cuda:0')
+
+      result = inference_segmentor(model, './in.png')
+      model.show_result(img, result, out_file=list_of_outnames[i], opacity=0.5)
+#+end_src
+
+# build the model from a config file and a checkpoint file
+
+# test a single image and show the results
+# visualize the results in a new window
+# or save the visualization results to image files
+# you can change the opacity of the painted segmentation map in (0, 1].
+
+# test a video and show the results
+video = mmcv.VideoReader('video.mp4')
+for frame in video:
+   result = inference_segmentor(model, frame)
+   model.show_result(frame, result, wait_time=1)
+
+* Script to convert all images to same resolution:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./convert.py
+  import os
+  import cv2
+  from multiprocessing import Pool
+
+  with open("./jpg", 'r') as f:
+      names = f.read()
+
+  names = names.split('\n')
+  print(names)
+
+
+  def do_img_resize(name):
+      if len(name) > 4:
+	  img = cv2.imread(name, cv2.IMREAD_UNCHANGED)
+	  if (not ((img.shape[0] == 1500) and (img.shape[1] == 1000))):
+	      dst = cv2.resize(src=img,
+			       dsize=(1000, 1500),
+			       interpolation=cv2.INTER_CUBIC)
+	      cv2.imwrite(name, dst)
+
+
+  with Pool(8) as p:
+      p.map(do_img_resize, names)
+
+  with open("./png", 'r') as f:
+      names = f.read()
+
+  names = names.split('\n')
+  print(names)
+
+
+  def do_img_resize_nearest(name):
+      if len(name) > 4:
+	  img = cv2.imread(name, cv2.IMREAD_UNCHANGED)
+	  if (not ((img.shape[0] == 1500) and (img.shape[1] == 1000))):
+	      dst = cv2.resize(src=img,
+			       dsize=(1000, 1500),
+			       interpolation=cv2.INTER_NEAREST)
+	      cv2.imwrite(name, dst)
+	  else:
+	      print("did not get different shape: ", img.shape)
+      else:
+	  print("too small: ", name)
+
+
+  with Pool(8) as p:
+      p.map(do_img_resize_nearest, names)
+#+end_src
+
+* Script to generate 500 random numbers
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./random.py
+  import numpy as np
+  numbers = set()
+
+  while len(numbers)<500:
+      numbers.add(np.random.randint(0,57896-1))
+
+  for i in numbers:
+      print(i)
+#+end_src
+
+* Start the training:
+
+** Base:
+#+begin_src sh :shebang #!/bin/sh
+  bash 'tools/dist_train.sh' './configs/swin/upernet_swin_base_patch4_window12_512x512_160k_ade20k_pretrain_384x384_22K.py' '1'
+#+end_src
+
+** Tiny:
+#+begin_src sh :shebang #!/bin/sh
+  bash 'tools/dist_train.sh' './configs/swin/upernet_swin_tiny_patch4_window7_512x512_160k_ade20k_pretrain_224x224_1K.py' '1'
+#+end_src
+
+** Segnext base:
+#+begin_src sh :shebang #!/bin/bash
+  bash 'tools/dist_train.sh' './configs/segnext/segnext_mscan-b_1x16_512x512_adamw_160k_ade20k.py' '1' '--resume-from' './work_dirs/segnext_mscan-b_1x16_512x512_adamw_160k_ade20k-2.pth'
+#+end_src
+
+python main_simmim_pt.py --cfg configs/simmim/simmim_pretrain__swin_base__img192_window6__800ep.yaml --batch-size 4 --data-path x --output outtest
+python -m torch.distributed.launch --nproc_per_node 1 main_simmim_pt.py --cfg configs/simmim/simmim_pretrain__swin_base__img192_window6__800ep.yaml --batch-size 32 --data-path x --output out_m 
+python -m torch.distributed.launch --nproc_per_node 1 main_simmim_pt.py --cfg configs/simmim/simmim_pretrain__swinv2_base__img192_window12__800ep.yaml --batch-size 2 --data-path x --output out_m 
+
+|----------------+----------------+----------------------------------------------------------------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------+-------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------|
+| Model          | Framework      | Model Type                                                                                               | Advantages                                                                                                                   | Disadvantages                                                                 | Training Time                                                                                                        |
+|----------------+----------------+----------------------------------------------------------------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------+-------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------|
+| Segformer      | Huggingface    | Multi stage transformer encoder + multi stage MLP decoder with skip connections from encoder (like UNet) | Very efficient                                                                                                               | Low resolution (output mask resolution is 1/4 of input image resolution)      | ~ 3 days on laptop / colab for finetuning                                                                            |
+| SegNext        | MMSegmentation | Multi scale convolution + cross attention                                                                | Even more efficient and better performing than segformer, higher resolution                                                  | Performance might still not be good enough, still exploring                   | Checkpoints available in mmsegmentation donot seem to be as good as Huggingface, so might need longer training times |
+| U2NET          | Plain PyTorch  | Multi scale convolutional encoder + decoder with residual connections                                    | proven model, have extremely high quality code and pre-trained model, pretty efficient, can work with high resolution images | Somewhat heavier than segformer and segnext, generalizibility might be lesser | Alread very good model available, fine tuning is somewhat heavy.                                                     |
+| Swin + Upernet | MMSegmentation | Swin encoder + Upernet decoder                                                                           | Close to state of the art, Strong unsupervised pre-training                                                                  | Extremely heavy                                                               | Expected to be very long with a single GPU                                                                           |
+| BEiT           | Huggingface    | ViT Encoder trained using BEiT Method + semantic segmentation decoder                                    | Close to state of the art, Strong unsupervised pre-training                                                                  | Extremely heavy                                                               | Expected to be very long with a single GPU                                                                           |
+|----------------+----------------+----------------------------------------------------------------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------+-------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------|

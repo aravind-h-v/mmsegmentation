@@ -1,0 +1,6 @@
+#git.org#
+.#git.org
+git.org~
+.git.org.~undo-tree~
+main.org~
+.main.org.~undo-tree~

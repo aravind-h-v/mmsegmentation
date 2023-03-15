@@ -1,0 +1,14 @@
+configs/_base_/datasets/fashion.py
+configs/_base_/schedules/schedule_160k.py
+configs/_base_/schedules/schedule_320k.py
+configs/_base_/schedules/schedule_640k.py
+configs/_base_/schedules/schedule_80k.py
+configs/segnext/segnext_mscan-b_1x16_512x512_adamw_160k_ade20k.py
+configs/segnext/segnext_mscan-l_1x16_512x512_adamw_160k_ade20k.py
+configs/segnext/segnext_mscan-s_1x16_512x512_adamw_160k_ade20k.py
+configs/segnext/segnext_mscan-t_1x16_512x512_adamw_160k_ade20k.py
+git_add.txt
+git.org
+git_rm.txt
+git_update.sh
+main.org
