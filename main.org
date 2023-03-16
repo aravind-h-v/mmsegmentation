@@ -1,3 +1,18 @@
+* Overview:
+In this package, we explore openai stuff.
+
+** Mozilla TTS:
+https://github.com/mozilla/TTS
+
+** Open AI getting started:
+https://platform.openai.com/docs/api-reference?lang=python
+
+** Link for Open AI chatbot
+https://openai.com/blog/introducing-chatgpt-and-whisper-apis
+
+** TTS:
+https://huggingface.co/espnet/english_male_ryanspeech_fastspeech
+
 * Prepare Env:
 
 ** cd to the dir and setup env variables:
@@ -66,9 +81,29 @@
 *** Install mmsegmentation:
 #+begin_src sh :shebang #!/bin/sh :tangle ./shrc_install.sh
   . "${HOME}/shrc_mmseg.sh"
-  git clone 'https://github.com/aravind-h-v/mmsegmentation.git'
+  git clone 'https://github.com/open-mmlab/mmsegmentation.git'
   cd mmsegmentation
   pip install -v -e .
+  mim download mmsegmentation --config pspnet_r50-d8_512x1024_40k_cityscapes --dest .
+#+end_src
+
+*** Test stuff:
+#+begin_src sh :shebang #!/bin/sh
+  cd mmsegmentation
+  python demo/image_demo.py demo/demo.png configs/pspnet/pspnet_r50-d8_512x1024_40k_cityscapes.py pspnet_r50-d8_512x1024_40k_cityscapes_20200605_003338-2966598c.pth --device cuda:0 --out-file result.jpg
+#+end_src
+
+*** Test stuff:
+#+begin_src sh :shebang #!/bin/sh
+  cd mmsegmentation
+  python demo/image_demo.py demo/demo.png '/home/asd/MMSEG/mmsegmentation/configs/swin/upernet_swin_large_patch4_window12_512x512_pretrain_384x384_22K_160k_ade20k.py' '/home/asd/MMSEG/upernet_swin_large_patch4_window12_512x512_pretrain_384x384_22K_160k_ade20k_20220318_091743-9ba68901.pth' --device cuda:0 --out-file result.jpg
+#+end_src
+
+*** Install mmsegmentation:
+#+begin_src sh :shebang #!/bin/sh
+  git clone 'https://github.com/Visual-Attention-Network/SegNeXt.git'
+  cd SegNeXt
+  python ./setup.py install
 #+end_src
 
 * Python part:
@@ -87,7 +122,667 @@
 #+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./execute.py
 #+end_src
 
+** Importing Basic stuff:
+
+*** OS essentials:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./import.py
+  from collections import OrderedDict
+  import copy
+  import os
+  import os.path
+  import shutil
+#+end_src
+
+*** iteration and timing:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./import.py
+  import itertools
+  from timeit import default_timer as timer
+#+end_src
+
+*** math and numpy:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./import.py
+  import numpy as np
+  import math
+#+end_src
+
+*** multi-processing:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./import.py
+  import subprocess
+  from multiprocessing import Pool
+#+end_src
+
+*** Visualization:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./import.py
+  import matplotlib.pyplot as plt
+#+end_src
+
+*** JSON:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./import.py
+  import json
+#+end_src
+
+*** SK-LEARN:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./import.py
+  from sklearn.model_selection import train_test_split
+#+end_src
+
+*** downloading from google drive:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./import.py
+  import gdown
+#+end_src
+
+*** OpenCV
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./import.py
+  import cv2
+#+end_src
+
+** Basic configuration:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./execute.py
+  LENGTH_DATASET = 57896
+  MODEL_TYPE = 'SEGFORMER-B5'
+  FRESH_MODEL_NAME = MODEL_TYPE + "_FRESH"
+  OUTPUT_LOCATION = 'model.pt'
+
+  BATCH_SIZE = 1
+  PRETRAINED_MODEL_NAME='nvidia/mit-b5'
+  DALI_DEVICE='cpu'
+
+  # RESOLUTION_INPUT_X = 1000
+  # RESOLUTION_INPUT_Y = 1500
+
+  RESOLUTION_INPUT_X = 600
+  RESOLUTION_INPUT_Y = 600
+  LEARNING_RATE = 0.0002
+#+end_src
+
+** Test train splits related:
+
+*** Function to write the train and test split indices:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./functions.py
+  def write_test_train_splits():
+      indices = [i for i in range(LENGTH_DATASET)]
+
+      train_indices, test_indices = train_test_split(indices,
+                                                     test_size=500,
+                                                     random_state=26,
+                                                     shuffle=True)
+
+      train_indices = np.array(train_indices, dtype=np.uint16)
+      test_indices = np.array(test_indices, dtype=np.uint16)
+
+      train_indices.tofile("train_indices.npy")
+      test_indices.tofile("test_indices.npy")
+#+end_src
+
+*** Create the text files from numpy indices:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./functions.py
+  def create_text_file_list():
+
+      indices_train = np.fromfile("train_indices.npy", dtype=np.uint16)
+
+      list_images_train = [
+          'segmented_unify/x/' + str(i) + '.jpg 0\n' for i in indices_train
+      ]
+
+      with open('train_image.txt', 'w') as f:
+          f.writelines(list_images_train)
+
+      list_masks_train = [
+          'segmented_unify/y/' + str(i) + '.png 0\n' for i in indices_train
+      ]
+
+      with open('train_mask.txt', 'w') as f:
+          f.writelines(list_masks_train)
+
+      indices_test = np.fromfile("test_indices.npy", dtype=np.uint16)
+
+      list_images_test = [
+          'segmented_unify/x/' + str(i) + '.jpg 0\n' for i in indices_test
+      ]
+
+      with open('test_image.txt', 'w') as f:
+          f.writelines(list_images_test)
+
+      list_masks_test = [
+          'segmented_unify/y/' + str(i) + '.png 0\n' for i in indices_test
+      ]
+
+      with open('test_mask.txt', 'w') as f:
+          f.writelines(list_masks_test)
+#+end_src
+
+*** Create truth file lists:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./functions.py
+  def create_truth_text_file_list():
+
+      idx_list = [
+          0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 101
+      ]
+
+      list_images_x = [
+          "./truth/all/" + str(i) + "/x_resized.png 0\n" for i in idx_list
+      ]
+
+      with open('truth_image.txt', 'w') as f:
+          f.writelines(list_images_x)
+
+      list_images_y = [
+          "./truth/all/" + str(i) + "/y_resized.png 0\n" for i in idx_list
+      ]
+
+      with open('truth_mask.txt', 'w') as f:
+          f.writelines(list_images_y)
+#+end_src
+
+*** Create test / train splits if it is not there:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./execute.py
+  if not (os.path.exists("train_indices.npy")
+          and os.path.exists("test_indices.npy")):
+      write_test_train_splits()
+
+  if not (os.path.exists('test_image.txt') and os.path.exists('test_mask.txt')
+          and os.path.exists('train_image.txt')
+          and os.path.exists('train_mask.txt')):
+      create_text_file_list()
+
+  if not (os.path.exists('truth_image.txt')
+          and os.path.exists('truth_mask.txt')):
+      create_truth_text_file_list()
+#+end_src
+
+** Data augmentation with DALI:
+
+*** Import nvidia dali stuff:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./import.py
+  import nvidia
+  import nvidia.dali.fn as fn
+  import nvidia.dali.types as types
+  from nvidia.dali import pipeline_def
+  from nvidia.dali.pipeline import pipeline_def
+  from nvidia.dali.plugin.pytorch import DALIGenericIterator
+#+end_src
+
+*** Semantic segmentation pipeline:
+
+**** Write the main pipeline GPU function:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./functions.py
+  @pipeline_def
+  def augmented_pipeline_gpu(name_file_txt_images_list,
+                             name_file_txt_masks_list,
+                             do_augment=True):
+
+      factor_shuffel = np.random.randint(0, high=LENGTH_DATASET, dtype=np.int32)
+
+      # ORDER = R G B
+      IMAGENET_DEFAULT_MEAN = [0.485, 0.456, 0.406]
+      IMAGENET_DEFAULT_STD = [0.229, 0.224, 0.225]
+
+      if do_augment:
+
+          image, _ = fn.readers.file(file_list=name_file_txt_images_list,
+                                     seed=factor_shuffel,
+                                     random_shuffle=True,
+                                     name="Reader")
+
+          mask, _ = fn.readers.file(file_list=name_file_txt_masks_list,
+                                    seed=factor_shuffel,
+                                    random_shuffle=True)
+
+      else:
+
+          image, _ = fn.readers.file(file_list=name_file_txt_images_list,
+                                     seed=factor_shuffel,
+                                     name="Reader")
+
+          mask, _ = fn.readers.file(file_list=name_file_txt_masks_list,
+                                    seed=factor_shuffel)
+
+      image, mask = fn.decoders.image([image, mask], device='mixed')
+
+      if do_augment:
+
+          if True:
+              factor_angle = fn.random.uniform(range=[0, 180.0])
+              image, mask = fn.rotate([image, mask],
+                                      angle=factor_angle,
+                                      interp_type=types.INTERP_NN,
+                                      fill_value=0)
+
+          if True:
+              image, mask = fn.random_resized_crop(
+                  [image, mask], size=[RESOLUTION_INPUT_Y, RESOLUTION_INPUT_X])
+
+          if True:
+              factor_flip_horizontal = fn.random.uniform(
+                  values=[0, 1], dtype=nvidia.dali.types.DALIDataType.INT32)
+
+              factor_flip_vertical = fn.random.uniform(
+                  values=[0, 1], dtype=nvidia.dali.types.DALIDataType.INT32)
+
+              image, mask = fn.flip([image, mask],
+                                    vertical=factor_flip_vertical,
+                                    horizontal=factor_flip_horizontal)
+
+          if True:
+              factor_brightness = fn.random.uniform(range=[0.5, 1.5])
+
+              factor_contrast = fn.random.uniform(range=[0.5, 1.5])
+
+              image = fn.brightness_contrast(image,
+                                             brightness=factor_brightness,
+                                             contrast=factor_contrast)
+
+          if True:
+
+              factor_hue = fn.random.uniform(range=[0, 360.0])
+
+              factor_saturation = fn.random.uniform(range=[0.5, 1.5])
+
+              image = fn.hsv(image, hue=factor_hue, saturation=factor_saturation)
+
+          if True:
+              image = fn.jpeg_compression_distortion(image, quality=80)
+
+      else:
+
+          if True:
+              image, mask = fn.resize(
+                  [image, mask], size=[RESOLUTION_INPUT_Y, RESOLUTION_INPUT_X])
+
+      imager = fn.tensor_subscript(image, at_2=0)
+      imageg = fn.tensor_subscript(image, at_2=1)
+      imageb = fn.tensor_subscript(image, at_2=2)
+
+      imager = fn.cast(imageg, dtype=nvidia.dali.types.DALIDataType.FLOAT)
+      imageg = fn.cast(imager, dtype=nvidia.dali.types.DALIDataType.FLOAT)
+      imageb = fn.cast(imageb, dtype=nvidia.dali.types.DALIDataType.FLOAT)
+
+      imager = imager / 255.0
+      imageg = imageg / 255.0
+      imageb = imageb / 255.0
+
+      imager = (imager - IMAGENET_DEFAULT_MEAN[0]) / IMAGENET_DEFAULT_STD[0]
+      imageg = (imageg - IMAGENET_DEFAULT_MEAN[1]) / IMAGENET_DEFAULT_STD[1]
+      imageb = (imageb - IMAGENET_DEFAULT_MEAN[2]) / IMAGENET_DEFAULT_STD[2]
+
+      image = fn.stack(imager, imageg, imageb)
+
+      mask = fn.tensor_subscript(mask, at_2=0)
+      mask = fn.cast(mask, dtype=nvidia.dali.types.DALIDataType.INT64)
+
+      return image, mask
+#+end_src
+
+**** Write the main pipeline CPU function:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./functions.py
+  @pipeline_def
+  def augmented_pipeline_cpu(name_file_txt_images_list,
+                             name_file_txt_masks_list,
+                             do_augment=True):
+
+      factor_shuffel = np.random.randint(0, high=LENGTH_DATASET, dtype=np.int32)
+
+      # ORDER = R G B
+      IMAGENET_DEFAULT_MEAN = [0.485, 0.456, 0.406]
+      IMAGENET_DEFAULT_STD = [0.229, 0.224, 0.225]
+
+      if do_augment:
+
+          image, _ = fn.readers.file(file_list=name_file_txt_images_list,
+                                     seed=factor_shuffel,
+                                     random_shuffle=True,
+                                     name="Reader",
+                                     device='cpu')
+
+          mask, _ = fn.readers.file(file_list=name_file_txt_masks_list,
+                                    seed=factor_shuffel,
+                                    random_shuffle=True,
+                                    device='cpu')
+
+      else:
+
+          image, _ = fn.readers.file(file_list=name_file_txt_images_list,
+                                     seed=factor_shuffel,
+                                     name="Reader",
+                                     device='cpu')
+
+          mask, _ = fn.readers.file(file_list=name_file_txt_masks_list,
+                                    seed=factor_shuffel,
+                                    device='cpu')
+
+      image, mask = fn.decoders.image([image, mask], device='cpu')
+
+      if do_augment:
+
+          if True:
+              factor_angle = fn.random.uniform(range=[0, 180.0], device='cpu')
+
+              image, mask = fn.rotate([image, mask],
+                                      angle=factor_angle,
+                                      interp_type=types.INTERP_NN,
+                                      fill_value=0,
+                                      device='cpu')
+
+          if True:
+              image, mask = fn.random_resized_crop(
+                  [image, mask],
+                  size=[RESOLUTION_INPUT_Y, RESOLUTION_INPUT_X],
+                  device='cpu')
+
+          if True:
+              factor_flip_horizontal = fn.random.uniform(
+                  values=[0, 1],
+                  dtype=nvidia.dali.types.DALIDataType.INT32,
+                  device='cpu')
+
+              factor_flip_vertical = fn.random.uniform(
+                  values=[0, 1],
+                  dtype=nvidia.dali.types.DALIDataType.INT32,
+                  device='cpu')
+
+              image, mask = fn.flip([image, mask],
+                                    vertical=factor_flip_vertical,
+                                    horizontal=factor_flip_horizontal,
+                                    device='cpu')
+
+          if True:
+              factor_brightness = fn.random.uniform(range=[0.5, 1.5],
+                                                    device='cpu')
+
+              factor_contrast = fn.random.uniform(range=[0.5, 1.5], device='cpu')
+
+              image = fn.brightness_contrast(image,
+                                             brightness=factor_brightness,
+                                             contrast=factor_contrast,
+                                             device='cpu')
+
+          if True:
+
+              factor_hue = fn.random.uniform(range=[0, 360.0], device='cpu')
+
+              factor_saturation = fn.random.uniform(range=[0.5, 1.5],
+                                                    device='cpu')
+
+              image = fn.hsv(image,
+                             hue=factor_hue,
+                             saturation=factor_saturation,
+                             device='cpu')
+
+          if True:
+              image = fn.jpeg_compression_distortion(image,
+                                                     quality=80,
+                                                     device='cpu')
+
+      else:
+
+          if True:
+              image, mask = fn.resize(
+                  [image, mask],
+                  size=[RESOLUTION_INPUT_Y, RESOLUTION_INPUT_X],
+                  device='cpu')
+
+      imager = fn.tensor_subscript(image, at_2=0, device='cpu')
+      imageg = fn.tensor_subscript(image, at_2=1, device='cpu')
+      imageb = fn.tensor_subscript(image, at_2=2, device='cpu')
+
+      imager = fn.cast(imageg,
+                       dtype=nvidia.dali.types.DALIDataType.FLOAT,
+                       device='cpu')
+
+      imageg = fn.cast(imager,
+                       dtype=nvidia.dali.types.DALIDataType.FLOAT,
+                       device='cpu')
+
+      imageb = fn.cast(imageb,
+                       dtype=nvidia.dali.types.DALIDataType.FLOAT,
+                       device='cpu')
+
+      imager = imager / 255.0
+      imageg = imageg / 255.0
+      imageb = imageb / 255.0
+
+      imager = (imager - IMAGENET_DEFAULT_MEAN[0]) / IMAGENET_DEFAULT_STD[0]
+      imageg = (imageg - IMAGENET_DEFAULT_MEAN[1]) / IMAGENET_DEFAULT_STD[1]
+      imageb = (imageb - IMAGENET_DEFAULT_MEAN[2]) / IMAGENET_DEFAULT_STD[2]
+
+      image = fn.stack(imager, imageg, imageb, device='cpu')
+
+      mask = fn.tensor_subscript(mask, at_2=0, device='cpu')
+
+      mask = fn.cast(mask,
+                     dtype=nvidia.dali.types.DALIDataType.INT64,
+                     device='cpu')
+
+      return image, mask
+#+end_src
+
+**** Decide the main pipeline function:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./functions.py
+  def augmented_pipeline(name_file_txt_images_list,
+                         name_file_txt_masks_list,
+                         do_augment=True,
+                         ,**kwargs):
+
+      return augmented_pipeline_cpu(name_file_txt_images_list,
+                                    name_file_txt_masks_list,
+                                    do_augment,
+                                    ,**kwargs)
+#+end_src
+
+**** Wrappers to create the pipeline:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./functions.py
+  def get_dali_iterator(name_file_txt_images_list, name_file_txt_masks_list,
+                        do_augment):
+
+      pipe = augmented_pipeline(name_file_txt_images_list,
+                                name_file_txt_masks_list,
+                                do_augment=do_augment,
+                                batch_size=BATCH_SIZE,
+                                num_threads=1,
+                                device_id=0)
+
+      myiter = DALIGenericIterator([pipe], ['image', 'mask'],
+                                   reader_name='Reader')
+
+      return myiter
+
+
+  def get_dali_iterator_train():
+      return get_dali_iterator(name_file_txt_images_list='train_image.txt',
+                               name_file_txt_masks_list='train_mask.txt',
+                               do_augment=True)
+
+
+  def get_dali_iterator_test():
+      return get_dali_iterator(name_file_txt_images_list='test_image.txt',
+                               name_file_txt_masks_list='test_mask.txt',
+                               do_augment=False)
+
+
+  def get_dali_iterator_truth():
+      return get_dali_iterator(name_file_txt_images_list='truth_image.txt',
+                               name_file_txt_masks_list='truth_mask.txt',
+                               do_augment=False)
+#+end_src
+
+** PyTorch stuff:
+
+*** Imports related:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./import.py
+  from torch import nn
+  import torch
+  import torch.nn.functional as F
+  import torch.optim as optim
+#+end_src
+
+*** Function to get the device:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./functions.py
+  def get_device():
+      device = "cpu"
+      if torch.cuda.is_available():
+          torch.backends.cudnn.benchmark = True
+          torch.backends.cuda.matmul.allow_tf32 = True
+          device = "cuda:0"
+
+      device = torch.device(device)
+      return device
+#+end_src
+
+*** Call the function:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./execute.py
+  device = get_device()
+#+end_src
+
+** MMSEG stuff:
+
+*** Importing:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./import.py
+  from mmseg.apis import (inference_segmentor, init_segmentor)
+  import mmcv
+#+end_src
+
+*** Function to load swin with upernet:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./functions.py
+  def get_swin_upernet():
+
+      config_file = '/home/asd/MMSEG/mmsegmentation/configs/swin/upernet_swin_large_patch4_window12_512x512_pretrain_384x384_22K_160k_ade20k.py'
+      checkpoint_file = '/home/asd/MMSEG/upernet_swin_large_patch4_window12_512x512_pretrain_384x384_22K_160k_ade20k_20220318_091743-9ba68901.pth'
+
+      model = init_segmentor(config_file, checkpoint_file, device='cuda:0')
+      return model
+#+end_src
+
+*** Save fresh swin model:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./functions.py
+  def save_fresh_swin_model():
+      model = get_swin_upernet()
+      torch.save(obj=model, f=OUTPUT_LOCATION)
+#+end_src
+
+** Prepare the model and optimizer:
+
+*** Load the model:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./execute.py
+  model = torch.load(f=OUTPUT_LOCATION, map_location=device)
+#+end_src
+
+*** Load the Loss:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./execute.py
+  loss = torch.nn.CrossEntropyLoss(weight=None,
+                                   size_average=None,
+                                   ignore_index=-100,
+                                   reduce=None,
+                                   reduction='mean',
+                                   label_smoothing=0.0)
+#+end_src
+
+*** Optimizer stuff:
+
+**** Load the optimizer:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./execute.py
+  optimizer = optim.AdamW(params=model.parameters(),
+                          lr=LEARNING_RATE,
+                          betas=(0.9, 0.999),
+                          eps=1e-08,
+                          weight_decay=0.01,
+                          amsgrad=False,
+                          maximize=False,
+                          foreach=None,
+                          capturable=False)
+#+end_src
+
+**** COMMENT Function to change learning rate:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./functions.py
+  def set_lr(val):
+      for g in optimizer.param_groups:
+          g['lr'] = val
+#+end_src
+
+*** Function to test the model:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./functions.py
+  def test_model():
+
+      dataloader_test = get_dali_iterator_test()
+
+      total_test_loss = 0
+      counts = 0
+      model.eval()
+      with torch.no_grad():
+          for i in dataloader_test:
+              x = i[0]['image']
+              y = i[0]['mask']
+              x = x.to(device)
+              y = y.type(torch.LongTensor).to(device)
+              y_p = model(x)
+              output = loss(y_p, y)
+              total_test_loss += output.item()
+              counts += 1
+      print("total test loss =", total_test_loss / counts)
+#+end_src
+
+*** Function to train the model:
+#+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./functions.py
+  def train_model():
+      count = 1
+      mask = 0xffff >> 6
+
+      accumulation = 0xff >> 3
+
+      use_DALI = True
+
+      dataloader = get_dali_iterator_train()
+
+      avg_loss = 0
+      sliding_window_factor_a = 0.01
+      sliding_window_factor_b = 1.0 - sliding_window_factor_a
+
+      img_metas = {
+          'img_shape': (RESOLUTION_INPUT_Y, RESOLUTION_INPUT_X, 3),
+          'scale_factor': 1,
+          'flip': False,
+          'filename': 'useless.jpg',
+          'ori_shape': (RESOLUTION_INPUT_Y, RESOLUTION_INPUT_X, 3),
+          'pad_shape': (RESOLUTION_INPUT_Y, RESOLUTION_INPUT_X, 3)
+      }
+
+      model.train()
+
+      for i in dataloader:
+
+          if use_DALI:
+              x = i[0]['image']
+              y = i[0]['mask']
+          else:
+              x, y = i
+
+          x = x.to(device)
+          y = y.type(torch.LongTensor).to(device)
+          y_p = model(x)
+
+          output = loss(y_p, y)
+          output.backward()
+
+          avg_loss = (sliding_window_factor_b *
+                      avg_loss) + (sliding_window_factor_a * output.item())
+
+          print("Avg loss, count : ", avg_loss, count)
+
+          optimizer.step()
+          optimizer.zero_grad()
+          print("Applying...")
+
+          if (count & mask) == 0:
+              set_lr(LEARNING_RATE)
+              print("Saving...")
+              save_model()
+              print("Testing...")
+              test_model()
+
+          count += 1
+#+end_src
+
 * Inference with trained model:
+
 #+begin_src python :shebang #!/home/asd/.conda/envs/mmseg/bin/python :tangle ./inference.py :results output
   from mmseg.apis import inference_segmentor, init_segmentor
   import mmcv
@@ -100,6 +795,17 @@
   cv2.imwrite("./in.png", img)
 
   config_file = './configs/segnext/segnext_mscan-b_1x16_512x512_adamw_160k_ade20k.py'
+
+  # 112000
+  # 128000
+  # 144000
+  # 160000
+  # 16000
+  # 32000
+  # 48000
+  # 64000
+  # 80000
+  # 96000
 
   list_of_outnames = [
       'out_160000.png', 'out_192000.png', 'out_224000.png', 'out_256000.png',
@@ -214,12 +920,39 @@ for frame in video:
 
 ** Segnext base:
 #+begin_src sh :shebang #!/bin/bash
-  bash 'tools/dist_train.sh' './configs/segnext/segnext_mscan-b_1x16_512x512_adamw_160k_ade20k.py' '1' '--resume-from' './work_dirs/segnext_mscan-b_1x16_512x512_adamw_160k_ade20k-2.pth'
+  bash 'tools/dist_train.sh' './configs/segnext/segnext_mscan-b_1x16_512x512_adamw_160k_ade20k.py' '1' '--resume-from' './work_dirs/segnext_mscan-b_1x16_512x512_adamw_160k_ade20k/latest.pth'
 #+end_src
+
+** Segnext base:
+#+begin_src sh :shebang #!/bin/bash
+  bash 'tools/dist_train.sh' './configs/segnext/segnext_mscan-l_1x16_512x512_adamw_160k_ade20k.py' '1' '--resume-from' './work_dirs/segnext_mscan-l_1x16_512x512_adamw_160k_ade20k/latest.pth'
+#+end_src
+
+#+begin_src sh :shebang #!/bin/bash
+  python 'tools/train.py' './configs/segnext/segnext_mscan-l_1x16_512x512_adamw_160k_ade20k.py' '--resume-from' './work_dirs/segnext_mscan-l_1x16_512x512_adamw_160k_ade20k/latest.pth'
+#+end_src
+
+
+* Unify the python files and open the main file:
+
+** Unify:
+#+begin_src sh :shebang #!/bin/bash :results output
+  cat ./import.py ./functions.py ./execute.py | expand | yapf3 | grep -v '^#' > ./main.py
+  chmod +x ./main.py
+#+end_src
+
+** Switch to main.py
+#+begin_src elisp :results output
+ (find-file "./main.py")
+#+end_src
+
 
 python main_simmim_pt.py --cfg configs/simmim/simmim_pretrain__swin_base__img192_window6__800ep.yaml --batch-size 4 --data-path x --output outtest
 python -m torch.distributed.launch --nproc_per_node 1 main_simmim_pt.py --cfg configs/simmim/simmim_pretrain__swin_base__img192_window6__800ep.yaml --batch-size 32 --data-path x --output out_m 
+
 python -m torch.distributed.launch --nproc_per_node 1 main_simmim_pt.py --cfg configs/simmim/simmim_pretrain__swinv2_base__img192_window12__800ep.yaml --batch-size 2 --data-path x --output out_m 
+
+
 
 |----------------+----------------+----------------------------------------------------------------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------+-------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------|
 | Model          | Framework      | Model Type                                                                                               | Advantages                                                                                                                   | Disadvantages                                                                 | Training Time                                                                                                        |

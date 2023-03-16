@@ -4,3 +4,4 @@ git.org~
 .git.org.~undo-tree~
 main.org~
 .main.org.~undo-tree~
+configs/segnext/.segnext_mscan-t_1x16_512x512_adamw_160k_ade20k.py.~undo-tree~

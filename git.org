@@ -22,12 +22,15 @@
   .git.org.~undo-tree~
   main.org~
   .main.org.~undo-tree~
+  configs/segnext/.segnext_mscan-t_1x16_512x512_adamw_160k_ade20k.py.~undo-tree~
 #+end_src
 
 #+begin_src sh :results output :shebang #!/bin/sh :tangle ./git_update.sh
   cd "$('dirname' '--' "${0}")"
   (sed 's@^@(git add "@g;s@$@");@g' './git_add.txt'; sed 's@^@(rm -vf -- "@g;s@$@");@g' './git_rm.txt') | sort | uniq | sh
 #+end_src
+
+#+RESULTS:
 
 #+begin_src sh :shebang #!/bin/sh :results output
   ./git_update.sh
@@ -42,14 +45,13 @@ Your branch is up to date with 'origin/master'.
 
 Changes to be committed:
   (use "git restore --staged <file>..." to unstage)
-	new file:   git.org
-	new file:   git_add.txt
-	new file:   git_rm.txt
-	new file:   git_update.sh
-	new file:   main.org
+	modified:   configs/segnext/segnext_mscan-t_1x16_512x512_adamw_160k_ade20k.py
+	modified:   git.org
+	modified:   main.org
 
 Untracked files:
   (use "git add <file>..." to include in what will be committed)
+	
 
 #+end_example
 
@@ -58,10 +60,13 @@ git commit -m 'Added changes for training on fashion datasets and other simple f
 #+end_src
 
 #+RESULTS:
-: [master ac45c68] Added changes for training on fashion datasets and other simple finetuning
-:  9 files changed, 83 insertions(+), 19 deletions(-)
-:  create mode 100644 configs/_base_/datasets/fashion.py
-:  create mode 100644 configs/_base_/schedules/schedule_640k.py
+: [master 8454c91] Added changes for training on fashion datasets and other simple finetuning
+:  5 files changed, 326 insertions(+)
+:  create mode 100644 git.org
+:  create mode 100644 git_add.txt
+:  create mode 100644 git_rm.txt
+:  create mode 100755 git_update.sh
+:  create mode 100644 main.org
 
 
 #+begin_src sh :results output :shebang #!/bin/sh
